@@ -1,0 +1,28 @@
+schema_version = "1.0.0"
+
+id = "viewar"
+version = "1.0.0"
+name = "ViewAR"
+tagline = "Live preview your scene in AR on iPhone and iPad"
+maintainer = "Danyal Sarfraz"
+type = "add-on"
+
+website = "https://github.com/Danyals-code/ViewAR---AR-VIew-for-Blender---Addon"
+tags = ["3D View", "Import-Export"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+
+# Optional: enables automatic discovery in the app. Without these wheels
+# the add-on still works and users type the IP address instead.
+# zeroconf 0.39.4 is the newest release published as a pure Python wheel,
+# so one file covers every OS. It imports async_timeout, hence the third wheel.
+wheels = [
+  "./wheels/zeroconf-0.39.4-py3-none-any.whl",
+  "./wheels/ifaddr-0.2.0-py3-none-any.whl",
+  "./wheels/async_timeout-5.0.1-py3-none-any.whl",
+]
+
+[permissions]
+network = "Streams the scene to the ViewAR app on your local network"
