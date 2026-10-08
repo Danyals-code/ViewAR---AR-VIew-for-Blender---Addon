@@ -11,15 +11,22 @@ The add-on runs a small server inside Blender and streams the open scene over yo
 ## Features
 
 - **Live streaming.** Object transforms are sent at up to 60 updates per second. Meshes are re-sent when their geometry or materials change (at most 10 times per second per object).
-- **Only changes go over the network.** A full scene is sent only when a device connects, when you open another .blend file, or when you press **Resync**.
+- **Only changes go over the network.** A full scene is sent only when a device connects, when you open another .blend file, change the Unit Scale or switch scenes, or when you press **Resync**.
 - **Modifiers applied.** What you see in the viewport (evaluated geometry) is what you get in AR.
+- **Instances.** Collection instances, particle instances and Geometry Nodes instances (scattering, arrays of objects) are streamed, up to a limit you set.
+- **Choose what to stream.** Everything visible, only the selection, or one collection, and any object can be kept out of AR with **Show in AR**.
+- **AR origin.** Use the world origin or the 3D cursor as the point that lands where you tap, so models far from the origin are easy to place.
+- **Pause updates** while you make heavy edits. Devices catch up when you resume.
 - **Basic materials.** Base Color, Metallic, Roughness and Alpha from the Principled BSDF.
-- **Automatic discovery.** Blender appears in the app under *Nearby* via Bonjour (mDNS). You can also enter the IP manually.
-- **Multiple devices.** Several phones can connect at once, and a phone that joins late receives the whole scene.
-- **Protects slower phones.** A per-object triangle budget, plus automatic resync for devices that fall behind.
+- **Automatic discovery.** Blender appears in the app under *Nearby* via Bonjour (mDNS), on every network interface. You can also enter or paste the IP manually.
+- **Multiple devices.** Several phones can connect at once, a phone that joins late receives the whole scene, and you can see how much data each device received or disconnect it.
+- **Remembers your settings.** Port, update rate and limits are kept in Blender's preferences, and the server can start automatically with Blender.
+- **Protects slower phones.** Per-object triangle and instance budgets, plus automatic resync for devices that fall behind.
 
-**Streamed:** mesh, curve, surface, metaball and text objects that are visible in the current view layer, with per-corner normals and the active UV map.
-**Not yet streamed:** lights, cameras, image textures, and collection or Geometry Nodes instances (see the [roadmap](#roadmap)).
+**Streamed:** mesh, curve, surface, metaball and text objects (and instances of them) that are visible in the current view layer, with per-corner normals and the active UV map.
+**Not yet streamed:** lights, cameras and image textures (see the [roadmap](#roadmap)).
+
+The add-on still speaks wire protocol v1, so every feature works with the existing ViewAR app.
 
 ---
 
@@ -27,7 +34,7 @@ The add-on runs a small server inside Blender and streams the open scene over yo
 
 | Item | Requirement |
 |---|---|
-| Blender | 4.2 or newer |
+| Blender | 4.2 or newer (tested on 5.2 LTS) |
 | OS | Windows, macOS or Linux |
 | iOS | The ViewAR app on an ARKit-capable iPhone or iPad |
 | Network | Computer and phone on the **same** Wi-Fi or LAN, without client isolation |
@@ -38,29 +45,31 @@ No extra Python packages need to be installed. The Bonjour libraries are bundled
 
 ## Installation
 
-### From a release zip
+### From the ready-made zip
 
-1. Download `viewar-<version>.zip` (or build it yourself, see below).
+1. Take `dist/viewar-<version>.zip` from this repository (or build it yourself, see below).
 2. In Blender go to **Edit › Preferences › Get Extensions**.
 3. Open the **⌄** dropdown in the top right and choose **Install from Disk…**.
 4. Select the zip. ViewAR is enabled automatically.
 
 ### Building the zip
 
-With Blender on your `PATH`:
+The quickest way needs only Python 3:
 
 ```bash
-blender --command extension validate --source-dir ./blender/viewar
+python3 build.py
+```
+
+This writes `dist/viewar-<version>.zip`, taking the version from `blender_manifest.toml`, and deletes older zips. When you work in Claude Code, a project hook (`.claude/settings.json`) runs this automatically every time a file in `blender/viewar/` changes, so the zip in `dist/` always matches the source.
+
+To also validate the manifest, use Blender's own tooling (Blender must be on your `PATH`):
+
+```bash
+blender --command extension validate ./blender/viewar
 ```
 
 ```bash
 blender --command extension build --source-dir ./blender/viewar --output-dir ./dist
-```
-
-Without Blender on your `PATH`, zipping the folder contents gives the same result:
-
-```bash
-cd blender/viewar && zip -r ../../dist/viewar-1.0.0.zip . -x '*__pycache__*' '.*'
 ```
 
 On macOS the Blender binary is at `/Applications/Blender.app/Contents/MacOS/Blender`.
@@ -70,24 +79,48 @@ On macOS the Blender binary is at `/Applications/Blender.app/Contents/MacOS/Blen
 ## Usage
 
 1. In the 3D Viewport press **N** to open the sidebar, then select the **ViewAR** tab.
-2. Optionally adjust the settings (only editable while the server is stopped):
-   - **Port** (default `51515`)
-   - **Updates per Second** (default `30`)
-   - **Max Triangles per Object** (default `300,000`). Objects above this are skipped.
-3. Press **Start Server**. The panel shows this computer's IP and port, and whether it is visible to nearby devices.
-4. Open the ViewAR app and pick your computer under **Nearby**, or type the IP and port shown in the panel.
-5. Tap a surface in the app to place the scene. You see Blender's **Front** view first.
-6. Work as usual. The panel lists connected devices, the number of streamed objects and triangles, and any objects skipped for being over budget.
-7. **Resync** sends the whole scene again. **Stop** disconnects all devices and closes the port.
+2. Press **Start Server**. The panel shows this computer's address and port (plus any other network addresses), and whether it is visible to nearby devices. The copy button next to the address puts it on the clipboard. With Universal Clipboard you can paste it straight into the app on your iPhone.
+3. Open the ViewAR app and pick your computer under **Nearby**, or enter the address shown in the panel.
+4. Tap a surface in the app to place the scene. You see Blender's **Front** view first.
+5. Work as usual. **Pause Updates** freezes what the devices show, and **Resume Updates** sends everything that changed in the meantime.
+6. **Resync** sends the whole scene again. **Stop** disconnects all devices and closes the port.
 
-Settings are stored on Blender's window manager, so they are **not** saved into your .blend files.
+The **Devices** box lists each connected phone with the data it has received. The **×** button disconnects that phone.
+
+### Streaming sub-panel
+
+| Option | What it does |
+|---|---|
+| **Visible Objects / Selected Objects / Collection** | What to send. *Selected* is handy for checking one asset; *Collection* streams a single collection you pick. |
+| **AR Origin** | *World Origin*, or *3D Cursor* so a model far from the origin still lands where you tap (**Shift+S › Cursor to Selected** first). |
+| **Include Instances** | Stream collection, particle and Geometry Nodes instances. Each instance is sent as its own mesh, so very large scatters are capped by **Max Instances**. |
+| **Show *object* in AR** | Keeps the active object out of AR while it stays visible in Blender, for example reference planes or helper meshes. **Alt+click** changes all selected objects. This setting is saved with the .blend file. |
+
+These options last for the session and are not saved into your .blend files.
+
+### Statistics sub-panel
+
+This shows the number of streamed objects, instances and triangles. It also warns when the scene is heavy for older iPhones, when the instance limit is reached, and which objects were skipped for exceeding the triangle budget.
+
+### Settings sub-panel
+
+These are also under **Edit › Preferences › Add-ons › ViewAR**, and Blender remembers them between sessions:
+
+| Setting | Default | Notes |
+|---|---|---|
+| **Port** | `51515` | Can only be changed while the server is stopped. |
+| **Updates per Second** | `30` | Lower it to 15–20 for heavy animated scenes. |
+| **Max Triangles per Object** | `300,000` | Objects above this are skipped. Changing it applies immediately. |
+| **Max Instances** | `500` | Instances beyond this are not sent. |
+| **Start Server with Blender** | off | Starts streaming automatically whenever Blender opens. |
 
 ### Tips for smooth results on older iPhones
 
 - Keep the whole scene under about **1 million triangles**. The panel warns you above that.
 - Lower the **viewport** level of Subdivision Surface modifiers while previewing.
-- Hide objects you don't need. Hidden objects are removed from the stream immediately.
-- For heavy animated scenes, reduce **Updates per Second** to 15–20.
+- Hide objects you don't need, or untick **Show in AR**. They are removed from the stream immediately.
+- Stream only the **Selected Objects** or one **Collection** when you are working on part of a big scene.
+- For heavy animated scenes, reduce **Updates per Second** to 15–20, and use **Pause Updates** during heavy edits such as sculpting.
 
 ---
 
@@ -108,15 +141,16 @@ The server only starts when you press **Start Server**, listens only on your loc
 
 | Symptom | Fix |
 |---|---|
-| "Could not open port" | Another program or a second Blender is using the port. Choose a different port and enter it in the app. |
+| "Could not open port" | Another program or a second Blender is using the port. Choose a different port in **Settings** and enter it in the app. |
 | "Use manual IP in the app" | Auto discovery failed to start. Manual IP still works. Check the system console for the error. |
-| App never finds the computer | Usually the firewall or network (see above). Try manual IP first to tell discovery problems apart from connection problems. |
-| Connected, but nothing appears | Tap a surface to place the scene. Check that the objects are visible in the current view layer, then press **Resync**. |
-| An object is missing in AR | It is over the triangle budget (listed as *Skipped*), is an unsupported type, or comes from a collection instance. |
+| App never finds the computer | Usually the firewall or network (see above). Try manual IP first to tell discovery problems apart from connection problems. If the panel lists several addresses, try each; VPNs and docks with Ethernet add extra ones. |
+| Connected, but nothing appears | Tap a surface to place the scene. Check that the objects are visible in the current view layer, that **Stream** is not limited to an empty selection or collection, and that updates are not paused. Then press **Resync**. |
+| Model appears far away from where I tapped | It is far from Blender's world origin. Set **AR Origin** to **3D Cursor** and snap the cursor to the model. |
+| An object is missing in AR | It is over the triangle budget (listed as *Skipped*), is an unsupported type, has **Show in AR** turned off, or is an instance beyond **Max Instances**. |
 | Wrong colors | Only unlinked Principled BSDF values are read. If Base Color is driven by a texture, the material's viewport display color is used. |
-| Scene is huge or tiny | Check **Scene Properties › Units › Unit Scale**. One Blender unit equals one meter at Unit Scale 1. |
+| Scene is huge or tiny | Check **Scene Properties › Units › Unit Scale**. One Blender unit equals one meter at Unit Scale 1. Changes are sent to devices automatically. |
 
-Errors are printed with full tracebacks to the system console (**Window › Toggle System Console** on Windows, or start Blender from a terminal on macOS and Linux).
+The most recent error is shown at the top of the ViewAR panel. Full tracebacks are printed to the system console (**Window › Toggle System Console** on Windows, or start Blender from a terminal on macOS and Linux).
 
 ---
 
@@ -125,14 +159,19 @@ Errors are printed with full tracebacks to the system console (**Window › Togg
 ```
 .
 ├── README.md
+├── CHANGELOG.md
 ├── ViewAR-Blender-Addon.md      # full specification and wire protocol
+├── build.py                     # packages the add-on into dist/
+├── dist/
+│   └── viewar-<version>.zip     # ready to install
+├── .claude/settings.json        # rebuilds the zip after each add-on edit
 └── blender/
     └── viewar/
         ├── blender_manifest.toml   # extension metadata, permissions, wheels
-        ├── __init__.py             # settings, panel, operators, handlers, timer
+        ├── __init__.py             # preferences, panels, operators, handlers, timer
         ├── server.py               # threaded TCP server and frame encoding
-        ├── discovery.py            # optional Bonjour (_viewar._tcp) advertising
-        ├── scene_stream.py         # change tracking and mesh export
+        ├── discovery.py            # network addresses and Bonjour (_viewar._tcp) advertising
+        ├── scene_stream.py         # change tracking, filtering, instances and mesh export
         └── wheels/                 # zeroconf, ifaddr, async_timeout (pure Python)
 ```
 
@@ -147,6 +186,8 @@ bpy.app.timers        ──► SceneStreamer.tick()                  remove / m
 ```
 
 All `bpy` access happens on Blender's main thread. Only finished byte frames are passed to the network threads.
+
+Instances come from `depsgraph.object_instances`. Protocol v1 has no instancing, so each instance is sent as an ordinary object with a stable id such as `Trees/Pine#0.12` (instancer / source object # persistent id). A mesh shared by many instances is triangulated only once per update.
 
 ### Wire protocol (v1), in short
 
@@ -166,11 +207,14 @@ If you remove the wheels entirely, the add-on still works and users type the IP 
 
 ## Roadmap
 
+These need a protocol update in the iOS app as well:
+
 1. Image textures (base color, normal, roughness)
-2. Collection and Geometry Nodes instancing
+2. Native instancing (send each shared mesh once plus instance matrices, instead of one mesh per instance)
 3. Pairing code for connections
 4. One-shot USDZ snapshot for full material fidelity
 5. Delta meshes (send only positions when topology is unchanged)
+6. Lights and cameras
 
 ---
 

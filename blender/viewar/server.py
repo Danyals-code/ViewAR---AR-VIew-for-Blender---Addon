@@ -25,6 +25,7 @@ class Client:
         self._queue = queue.Queue()
         self._lock = threading.Lock()
         self._pending = 0
+        self.bytes_sent = 0
         self.alive = True
         self.needs_full_sync = True
         threading.Thread(
@@ -69,6 +70,7 @@ class Client:
                 self._conn.sendall(data)
                 with self._lock:
                     self._pending -= len(data)
+                    self.bytes_sent += len(data)
         except OSError:
             pass
         finally:
@@ -132,6 +134,11 @@ class Server:
         with self._lock:
             self._clients = [c for c in self._clients if c.alive]
             return list(self._clients)
+
+    def disconnect(self, label):
+        for client in self.live_clients():
+            if client.label == label:
+                client.close()
 
     def stop(self):
         self._running = False

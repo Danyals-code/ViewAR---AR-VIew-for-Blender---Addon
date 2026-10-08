@@ -26,6 +26,28 @@ def local_ip():
         sock.close()
 
 
+def local_addresses():
+    """All IPv4 addresses a phone could reach, best guess first.
+
+    Computers with Ethernet plus Wi-Fi, or a VPN, have several, and the
+    best guess is not always the one the phone shares a network with.
+    """
+    primary = local_ip()
+    found = []
+    try:
+        import ifaddr
+
+        for adapter in ifaddr.get_adapters():
+            for ip in adapter.ips:
+                if isinstance(ip.ip, str) and not ip.ip.startswith(("127.", "169.254.")):
+                    found.append(ip.ip)
+    except Exception:  # ifaddr not bundled or the OS query failed
+        pass
+    ordered = [primary] if primary != "127.0.0.1" else []
+    ordered += [a for a in found if a not in ordered]
+    return ordered or ["127.0.0.1"]
+
+
 class Advertiser:
     def __init__(self):
         self._lock = threading.Lock()
@@ -35,21 +57,23 @@ class Advertiser:
         self.active = False
         self.error = None
 
-    def start(self, port):
+    def start(self, port, addresses):
         if not AVAILABLE:
             self.error = "zeroconf is not bundled"
             return
         # Registration blocks for about a second, so keep it off the UI thread.
-        threading.Thread(target=self._register, args=(port,), daemon=True).start()
+        threading.Thread(
+            target=self._register, args=(port, addresses), daemon=True
+        ).start()
 
-    def _register(self, port):
+    def _register(self, port, addresses):
         zc = None
         try:
             host = socket.gethostname().split(".")[0] or "blender"
             info = ServiceInfo(
                 SERVICE_TYPE,
                 f"ViewAR on {host}.{SERVICE_TYPE}",
-                addresses=[socket.inet_aton(local_ip())],
+                addresses=[socket.inet_aton(a) for a in addresses],
                 port=port,
                 properties={"v": "1"},
                 server=f"{host}.local.",
